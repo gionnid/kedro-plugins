@@ -134,10 +134,7 @@ class GeoTIFFDataset(AbstractVersionedDataset[xarray.DataArray, xarray.DataArray
             raise ValueError(
                 f"Unsupported file format. Supported formats are: {SUPPORTED_FILE_FORMATS}"
             )
-        if "band" in data.dims:
-            self._save_multiband(data, save_path)
-        else:
-            data.rio.to_raster(save_path, **self._save_args)
+        data.rio.to_raster(save_path, **self._save_args)
         self._fs.invalidate_cache(save_path)
 
     def _exists(self) -> bool:
@@ -156,37 +153,6 @@ class GeoTIFFDataset(AbstractVersionedDataset[xarray.DataArray, xarray.DataArray
         """Invalidate underlying filesystem caches."""
         filepath = get_filepath_str(self._filepath, self._protocol)
         self._fs.invalidate_cache(filepath)
-
-    def _save_multiband(self, data: xarray.DataArray, save_path: str):
-        """Saving multiband raster data to a geotiff file."""
-        bands_data = [data.sel(band=band) for band in data.band.values]
-        transform = from_bounds(
-            west=data.x.min(),
-            south=data.y.min(),
-            east=data.x.max(),
-            north=data.y.max(),
-            width=data[0].shape[1],
-            height=data[0].shape[0],
-        )
-
-        nodata_value = (
-            data.rio.nodata if data.rio.nodata is not None else DEFAULT_NO_DATA_VALUE
-        )
-        crs = data.rio.crs
-
-        meta = {
-            "driver": "GTiff",
-            "height": bands_data[0].shape[0],
-            "width": bands_data[0].shape[1],
-            "count": len(bands_data),
-            "dtype": str(bands_data[0].dtype),
-            "crs": crs,
-            "transform": transform,
-            "nodata": nodata_value,
-        }
-        with rasterio.open(save_path, "w", **meta) as dst:
-            for idx, band in enumerate(bands_data, start=1):
-                dst.write(band.data, idx, **self._save_args)
 
     def _sanity_check(self, data: xarray.DataArray) -> None:
         """Perform sanity checks on the data to ensure it meets the requirements."""
