@@ -179,3 +179,52 @@ def test_load_missing_file(tmp_path):
     pattern = r"Failed while loading data from dataset GeoTIFFDataset\(.*\)"
     with pytest.raises(DatasetError, match=pattern):
         dataset.load()
+
+def test_save_single_band_geotiff(tmp_path, multi1_file_path):
+    """Test saving a geotiff by loading an existing one, saving it, and compare."""
+
+    def read_without_rioxarray(path: str) -> xr.DataArray:
+        """Loading avoiding the use of rioxarray."""
+
+        with rasterio.open(path) as src:
+            raster = src.read()
+            profile = src.profile.data
+            bbox = src.bounds
+            res = src.res
+
+        coords = {
+            "band": [f"band_{i}" for i in range(profile["count"])],
+            "y": np.linspace(
+                bbox[1] + res[1] / 2, bbox[3] - res[1] / 2, profile["height"]
+            ),
+            "x": np.linspace(
+                bbox[0] + res[0] / 2, bbox[2] - res[0] / 2, profile["width"]
+            ),
+        }
+        return xr.DataArray(
+            raster,
+            dims=("band", "y", "x"),
+            attrs=profile,
+            # coords=coords,
+        )
+
+    saved_tif_path = str(tmp_path / "tmp.tif")
+    dataset = GeoTIFFDataset(filepath=saved_tif_path)
+    original_georaster = read_without_rioxarray(multi1_file_path)
+    dataset.save(original_georaster)
+
+    reloaded_georaster = read_without_rioxarray(saved_tif_path)
+
+    assert np.allclose(original_georaster.data, reloaded_georaster.data)
+    assert original_georaster.attrs["transform"].almost_equals(
+        reloaded_georaster.attrs["transform"]
+    )
+    assert {
+        _key: _val
+        for _key, _val in original_georaster.attrs.items()
+        if _key != "nodata"
+    } == {
+        _key: _val
+        for _key, _val in reloaded_georaster.attrs.items()
+        if _key != "nodata"
+    }
